@@ -2,6 +2,8 @@ import path, { dirname } from "path";
 import { fileURLToPath } from 'url';
 import zlib from 'zlib';
 
+import { Stack } from '@datastructures-js/stack';
+
 import { Package } from "@s4tk/models";
 import { registerPlugin } from "@s4tk/models/plugins.js";
 import { makeList } from "@s4tk/models/lib/common/helpers.js"
@@ -22,7 +24,17 @@ const TEST_RESOURCE_ABSOLUTE_PATH = path.join(dirname(__filename), TEST_RESOURCE
 const STYLED_LOOK_FILE_TYPE_DECIMAL = 1908258978;
 const SIM_INFO_FILE_TYPE_DECIMAL = 39769844;
 
-console.log(parsePackage(TEST_RESOURCE_ABSOLUTE_PATH));
+
+generateMCCCConfig(TEST_RESOURCE_ABSOLUTE_PATH);
+
+function generateMCCCConfig(absolutePathToPackageFile) {
+    // Parse the package and pull out file info for styled looks and sim info files
+    const { styledLookProperties = [], simInfoProperties = {} } = parsePackage(absolutePathToPackageFile);
+
+    // Generate an array of lines for the config file based on the data in the two files
+    const linesForConfigFile = generateLinesForConfigFile(styledLookProperties, simInfoProperties);
+    console.log("linesForConfigFile", linesForConfigFile);
+}
 
 function parsePackage(absolutePathToFile) {
     console.log("Opening file at:  ", absolutePathToFile);
@@ -47,8 +59,8 @@ function parsePackage(absolutePathToFile) {
         } else if (RESOURCE_TYPE_DECIMAL === SIM_INFO_FILE_TYPE_DECIMAL) {
             simInfoProperties.push(parseSimInfoResource(resource.value));
         } else {
-            // console.log("Skipping file with resource key: ", 
-            //     RESOURCE_TYPE_DECIMAL.toString(16) + "-" + RESOURCE_GROUP_DECIMAL.toString(16) + "-" + RESOURCE_INSTANCE_DECIMAL.toString(16))
+            console.log("Skipping file with resource key: ", 
+                RESOURCE_TYPE_DECIMAL.toString(16) + "-" + RESOURCE_GROUP_DECIMAL.toString(16) + "-" + RESOURCE_INSTANCE_DECIMAL.toString(16))
         }
     });
 
@@ -63,12 +75,13 @@ function parseStyledLookResource(rawResource) {
     let compressedBuffer = rawResource._bufferCache.buffer;
 
     try {
-        // Magic # starts with 78 da, so it looks like these files are compressed
+        // Magic # starts with "78 da", so it looks like these files are compressed
         // using zlib; need to use zlib to decompress them
-        const decompressedBuffer = zlib.inflateSync(compressedBuffer);
+        let decompressedBuffer = zlib.inflateSync(compressedBuffer);
 
         const decoder = new BinaryDecoder(decompressedBuffer);
 
+        // Start decoding from top of the file
         properties.version = decoder.uint32();
         properties.ageGender = readAgeGenderFlags(decoder.uint32());
         properties.prototypeId = decoder.uint64();
@@ -105,13 +118,17 @@ function parseStyledLookResource(rawResource) {
             decoder.bytes(2);
             return { tagValueNumber, categoryNumber };
         });  
+
+        // Ensure memory is released for garbage collection
+        decompressedBuffer = null;
     } catch (err) {
         console.error('Error during decompression and/or parsing of resource:', err);
     }
 
-    // Ensure the memory is released for garbage collection
+    // Again, ensure the memory is released for garbage collection
     compressedBuffer = null;
 
+    // Return the JS object with properties from this file
     return properties;
 }
 
@@ -121,65 +138,116 @@ function parseSimInfoResource(rawResource) {
 }
 
 /**
- * Return an array of styledLookData to compile the cfg from
- * @returns array of styledLookDatum objects containing age, gender, outfit category, and outfit part data
+ * Return an array of strings that can be written to a config file
+ * @returns array of strings
  */
-function getStyledLookData() {
-	const styledLookData = [];
+function generateLinesForConfigFile(styledLookProperties, simInfoProperties) {
+    // Each line will be a string representing an outfit for a particular age and gender
+    const lines = [];
 
-	// For each "Styled Look" in the package
-	const styledLookDatum = {
-		// simInfoInstance: "0x###############",
-		ages: [],
-		genders: [],
-		outfitCategories: [],
-	};
+    // O marks that this is the beginning of an outfit config line
+    styledLookProperties.forEach(styledLookPropertyFile => {
 
-	// Add the SimInfoInstance number to the datum
+        // Find what simInfoProperties correspond with the current styledLookProperties
+        const currSimInfo = simInfoProperties[styledLookPropertyFile.simInfoInstance];
+        // if (!currSimInfo) {
+        //     console.error("Couldn't find simInfo data for the current outfit; skipping styled look.")
+        // }
+        // Need to generate the outfit parts from the sim info properties
+        const outfitPartsString = generateOutfitPartsString(currSimInfo);
 
-	// Look through AgeGenderFlags
+        // Now need to generate the arrays we'll get the stacks from
+        const {
+            0: genders = [],
+            1: ages = [],
+            2: outfitCategories = []
+        } = populateAgeGenderOutfitCategoryArrays(styledLookPropertyFile);
+        
+        const gendersStack = Stack.fromArray(genders);
+        // Cloning the age & categories array because it may need to be regenerated
+        let agesStack = Stack.fromArray(ages.slice());
 
-	    // Add array of compatible ages to the datum
+        let outfitCategoriesStack = Stack.fromArray(outfitCategories.slice());
 
-	    // Populate with data
+        // Iterate through both genders
+        while (gendersStack.size() > 0) {
+            const currentGender = gendersStack.pop(); // Get the last gender from the stack
+            
+            // Iterate through all ages for the current gender
+            while (agesStack.size() > 0) {
+                const currentAge = agesStack.pop(); // Get the last age from the stack
+                
+                // Iterate through all compatible outfit categories for the current age and gender
+                while (outfitCategoriesStack.size() > 0) {
+                    const currentOutfitCategory = outfitCategoriesStack.pop(); // Get the last outfit category from the stack
+                    // Create the combination string
+                    const configLine = `0.${currentGender}.${currentAge},${currentOutfitCategory},${outfitPartsString}`;
 
-	    // Add array of compatible genders
+                    // Add the generated line to the configLines array
+                    lines.push(configLine);
+                }
 
-	    // Populate with data
+                // After finishing with the outfit categories for the current age and gender,
+                // we need to "reset" the outfit categories array for the next age/gender combo
+                outfitCategoriesStack = Stack.fromArray(outfitCategories.slice());              
+            }
+            
+            // After finishing with all ages for the current gender, "reset" the age array for the next gender
+            agesStack = Stack.fromArray(ages.slice());
+        }
+    });
 
-	// Look through Tags
-
-	    // Add array of OutfitCategory tags
-
-	// Return array of styled look data objects
-	return styledLookData;
+    return lines;
 }
 
-/**
- * Provided a list
- * @param {String[]} simInfoInstances an array of Strings containing simInfo file instane numbers (in 0x############### format)
- * @returnsan array of objects containing data about each outfit
- */
-function populateDataSimInfoResource(simInfoInstances) {
-	const data = [];
+function populateAgeGenderOutfitCategoryArrays(styledLookProperties) {
+    const genders = [];
+    const ages = [];
+    const outfitCategories = [];
 
-	// For each simInfoInstance
+    // Add the genders appropriate for this styled look to the stack
+    if (styledLookProperties.ageGender.male) {
+        genders.push("M");
+    }
+    if (styledLookProperties.ageGender.female) {
+        genders.push("F");
+    }
 
-	    // Find the associated SimInfo file
+    // Add the ages appropriate for this styled look to the stack
+    if (styledLookProperties.ageGender.infant) {
+        ages.push("I");
+    }
+    if (styledLookProperties.ageGender.toddler) {
+        ages.push("TD");
+    }
+    if (styledLookProperties.ageGender.child) {
+        ages.push("CH");
+    } 
+    if (
+        // Note: mc_dresser.cfg groups outfits for teens, young adults and adults
+        styledLookProperties.ageGender.teen ||
+        styledLookProperties.ageGender.youngAdult ||
+        styledLookProperties.ageGender.adult
+    ) {
+        ages.push("YA");
+    }
+    if (styledLookProperties.ageGender.elder) {
+        ages.push("EL");
+    }
 
-            // Locate the Outfit data
+    // Add the outfit categories appropriate for this styled look to the stack
+    styledLookProperties.tags.forEach((tag) => {
+        // If this tag represents an outfit category
+        if (tag.tagValueNumber === outfitCategoryTag) {
+            // Convert the tag number to MCCC_cfg compatible string and push to array
+            outfitCategories.push(outfitCategoriesToStringMap[tag.categoryNumber]);
+        }
+    })
 
-                // For each outfit category
-
-                // Collect info about the outfit category
-
-        // Process the outfit
-
-	// Return an array of objects containing data about each outfit
-	return data;
+    return [genders, ages, outfitCategories];
 }
 
-/**
- * Provided an outfit PartData List
- */
-function processOutfit() {}
+
+function generateOutfitPartsString(simInfoProperties) {
+    return "TODO";
+}
