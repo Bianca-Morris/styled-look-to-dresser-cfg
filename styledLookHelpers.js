@@ -11,7 +11,7 @@ const AgeGenderFlags = {
     Female: 0x00002000,      // Bit 14
 };
 
-// Function to read age and gender flags
+// Function to read age and gender flags from binary during parsing
 export function readAgeGenderFlags(ageGenderValue) {
     return {
         baby: (ageGenderValue & AgeGenderFlags.Baby) !== 0,
@@ -28,16 +28,17 @@ export function readAgeGenderFlags(ageGenderValue) {
     };
 }
 
+// Decimal value of "OutfitCategory" tag
 export const outfitCategoryTag = 70;
 
+// Map of decimal values of outfit categories to string readable by MCCC
 export const outfitCategoriesToStringMap = {
-    70: "OutfitCategory",
-    77: "OutfitCategory_Everyday",
-    78: "OutfitCategory_Formal",
-    80: "OutfitCategory_Athletic",
-    81: "OutfitCategory_Sleep",
-    83: "OutfitCategory_Party",
-    1229: "OutfitCategory_Swimwear",
-    2053: "OutfitCategory_HotWeather",
-    2054: "OutfitCategory_ColdWeather"
+    77: "E", // "OutfitCategory_Everyday",
+    78: "F", // "OutfitCategory_Formal",
+    80: "At", // "OutfitCategory_Athletic",
+    81: "Sl", // "OutfitCategory_Sleep",
+    83: "P", // "OutfitCategory_Party",
+    1229: "Sw", // "OutfitCategory_Swimwear",
+    2053: "Hw", // "OutfitCategory_HotWeather",
+    2054: "Cw", // "OutfitCategory_ColdWeather"
 }
