@@ -1,11 +1,14 @@
+import path, { dirname } from "path";
+import { fileURLToPath } from 'url';
+import zlib from 'zlib';
+
 import { Package } from "@s4tk/models";
 import { registerPlugin } from "@s4tk/models/plugins.js";
 import { makeList } from "@s4tk/models/lib/common/helpers.js"
 import { BinaryDecoder } from "@s4tk/encoding";
 import BufferFromFile from "@s4tk/plugin-bufferfromfile";
-import path, {dirname } from "path";
-import { fileURLToPath } from 'url';
-import zlib from 'zlib';
+
+import { readAgeGenderFlags, outfitCategoryTag, outfitCategoriesToStringMap } from "./styledLookHelpers.js";
 
 // Register the file buffer plugin
 registerPlugin(BufferFromFile.default);
@@ -16,125 +19,106 @@ const TEST_RESOURCE_RELATIVE_PATH = "/styled_look_packages/SimplyAnjuta_Basegame
 const __filename = fileURLToPath(import.meta.url);
 const TEST_RESOURCE_ABSOLUTE_PATH = path.join(dirname(__filename), TEST_RESOURCE_RELATIVE_PATH);
 
-// console.log(TEST_RESOURCE_ABSOLUTE_PATH);
+const STYLED_LOOK_FILE_TYPE_DECIMAL = 1908258978;
+const SIM_INFO_FILE_TYPE_DECIMAL = 39769844;
 
-// Open the package
-const resourceKeyPairs = Package.streamResources(
-	TEST_RESOURCE_ABSOLUTE_PATH
-);
-// console.log("resourceKeyPairs", resourceKeyPairs);
+console.log(parsePackage(TEST_RESOURCE_ABSOLUTE_PATH));
 
-// resourceKeyPairs.forEach((resource) => {
-//     if (resource.key.type === 39769844) {
-//         console.log("resource", resource);
-//         // console.log("resource.key.instance", resousrce.key.instance)
-//     }
-// });
-//     if (resource.key.instance === 684964046824037473n) {
-//         console.log("resource.value", resource.value);
-//     }
-// })
+function parsePackage(absolutePathToFile) {
+    console.log("Opening file at:  ", absolutePathToFile);
 
-const resourceKeyPair = resourceKeyPairs[1].value;
-console.log("resourceKeyPair", resourceKeyPairs[1]);
-const buffer = resourceKeyPair._bufferCache.buffer;
-// Decompress the buffer using zlib's inflate method
-zlib.inflate(buffer, (err, decompressedBuffer) => {
-    if (err) {
-      console.error('Error decompressing buffer:', err);
-    } else {
-      // Now you can convert the decompressed buffer to a string (or process it as needed)
-      const decompressedData = decompressedBuffer.toString('utf-8');
-      const decoder = new BinaryDecoder(decompressedBuffer);
+    // Open the package and start streaming the resources
+    const resourceKeyPairs = Package.streamResources(absolutePathToFile);
 
-      const properties = {};
+    // Prepare a place to store the data
+    let styledLookProperties = [];
+    let simInfoProperties = [];
 
-      const AgeGenderFlags = {
-        Baby: 0x00000001,        // Bit 1 ; Cannot be sure about this one - not in use
-        Toddler: 0x00000002,     // Bit 2 (added for toddler)
-        Child: 0x00000004,       // Bit 3
-        Teen: 0x00000008,        // Bit 4
-        YoungAdult: 0x00000010,  // Bit 5
-        Adult: 0x00000020,       // Bit 6
-        Elder: 0x00000040,       // Bit 7
-        Infant: 0x000000080,     // Bit 8 
-        Male: 0x00001000,        // Bit 13
-        Female: 0x00002000,      // Bit 14
-    };
-    
-    
-    
+    // For each resource key pair, handle file parsing separately
+    resourceKeyPairs.forEach((resource) => {
+        // Grab resource key data
+        const RESOURCE_TYPE_DECIMAL = resource.key.type;
+        const RESOURCE_INSTANCE_DECIMAL = resource.key.instance;
+        const RESOURCE_GROUP_DECIMAL = resource.key.group;
+        
+        // Decide how to handle file based on data available
+        if (RESOURCE_TYPE_DECIMAL === STYLED_LOOK_FILE_TYPE_DECIMAL) {
+            styledLookProperties.push(parseStyledLookResource(resource.value));
+        } else if (RESOURCE_TYPE_DECIMAL === SIM_INFO_FILE_TYPE_DECIMAL) {
+            simInfoProperties.push(parseSimInfoResource(resource.value));
+        } else {
+            // console.log("Skipping file with resource key: ", 
+            //     RESOURCE_TYPE_DECIMAL.toString(16) + "-" + RESOURCE_GROUP_DECIMAL.toString(16) + "-" + RESOURCE_INSTANCE_DECIMAL.toString(16))
+        }
+    });
 
-      // Function to read age and gender flags
-    function readAgeGenderFlags(ageGenderValue) {
-        return {
-            baby: (ageGenderValue & AgeGenderFlags.Baby) !== 0,
-            infant: (ageGenderValue & AgeGenderFlags.Infant) !== 0,
-            toddler: (ageGenderValue & AgeGenderFlags.Toddler) !== 0,
-            child: (ageGenderValue & AgeGenderFlags.Child) !== 0,
-            teen: (ageGenderValue & AgeGenderFlags.Teen) !== 0,
-            youngAdult: (ageGenderValue & AgeGenderFlags.YoungAdult) !== 0,
-            adult: (ageGenderValue & AgeGenderFlags.Adult) !== 0,
-            elder: (ageGenderValue & AgeGenderFlags.Elder) !== 0,
-            male: (ageGenderValue & AgeGenderFlags.Male) !== 0,
-            female: (ageGenderValue & AgeGenderFlags.Female) !== 0,
-            value: `0x${ageGenderValue.toString(16).toUpperCase().padStart(8, '0')}` // Return the hex value
-        };
-    }
+    // Return the data for each relevant file type
+    return { styledLookProperties, simInfoProperties };
+}
 
-      properties.version = decoder.uint32();
-      properties.ageGender = readAgeGenderFlags(decoder.uint32());
-      properties.prototypeId = decoder.uint64();
-      properties.b1 = decoder.byte();
-      properties.b2 = decoder.byte();
-      properties.simInfoInstance = decoder.uint64().toString(16).toUpperCase();
-      properties.gradientTextureInstance = decoder.uint64().toString(16).toUpperCase();
-      properties.cameraPoseTuningInstance = decoder.uint64().toString(16).toUpperCase();
-      properties.nameHash = decoder.uint32().toString(16).toUpperCase();
-      properties.descriptionHash = decoder.uint32().toString(16).toUpperCase();
-      properties.unknown2 = decoder.bytes(14); // 14-byte unknown field
-      properties.unknown3 = decoder.uint16();
-      properties.s1 = decoder.uint16();
-      
-      // Animation references and state names
-      properties.poseAnimationStateMachine = decoder.uint64().toString(16).toUpperCase();
-      properties.poseAnimationStateMachineKey = decoder.slice(decoder.uint32()).toString();      
-      properties.thumbnailAnimationStateMachine = decoder.uint64().toString(16).toUpperCase();
-      properties.thumbnailAnimationStateMachineKey = decoder.slice(decoder.uint32()).toString();;
-    
-      // Placeholder parsers for colorList and flagList
-      properties.colorList = makeList(decoder.byte(), () => {
+function parseStyledLookResource(rawResource) {
+    // As we decode the file, we'll add to an object of file properties
+    const properties = {};
+
+    let compressedBuffer = rawResource._bufferCache.buffer;
+
+    try {
+        // Magic # starts with 78 da, so it looks like these files are compressed
+        // using zlib; need to use zlib to decompress them
+        const decompressedBuffer = zlib.inflateSync(compressedBuffer);
+
+        const decoder = new BinaryDecoder(decompressedBuffer);
+
+        properties.version = decoder.uint32();
+        properties.ageGender = readAgeGenderFlags(decoder.uint32());
+        properties.prototypeId = decoder.uint64();
+        properties.b1 = decoder.byte();
+        properties.b2 = decoder.byte();
+        properties.simInfoInstance = decoder.uint64().toString(16).toUpperCase();
+        properties.gradientTextureInstance = decoder.uint64().toString(16).toUpperCase();
+        properties.cameraPoseTuningInstance = decoder.uint64().toString(16).toUpperCase();
+        properties.nameHash = decoder.uint32().toString(16).toUpperCase();
+        properties.descriptionHash = decoder.uint32().toString(16).toUpperCase();
+        properties.unknown2 = decoder.bytes(14); // 14-byte unknown field
+        properties.unknown3 = decoder.uint16();
+        properties.s1 = decoder.uint16();
+        
+        // Animation references and state names
+        properties.poseAnimationStateMachine = decoder.uint64().toString(16).toUpperCase();
+        properties.poseAnimationStateMachineKey = decoder.slice(decoder.uint32()).toString();      
+        properties.thumbnailAnimationStateMachine = decoder.uint64().toString(16).toUpperCase();
+        properties.thumbnailAnimationStateMachineKey = decoder.slice(decoder.uint32()).toString();;
+        
+        // Placeholder parser for colorList
+        properties.colorList = makeList(decoder.byte(), () => {
             return decoder.uint32().toString(16); // Color string (e.g., "#FFFCDBD3")
-      })
-      
-      properties.numTags = decoder.byte();
-      properties.tags = makeList(properties.numTags, (index) => {
-              if (index == 0) {
+        })
+        
+        // Placeholder parser for tags
+        properties.numTags = decoder.byte();
+        properties.tags = makeList(properties.numTags, (index) => {
+            if (index == 0) {
                 decoder.bytes(3);
-              }
-              const tagValueNumber = decoder.uint16();
-              const categoryNumber = decoder.uint16();
-              decoder.bytes(2);
-              return { tagValueNumber, categoryNumber };
-            });
-
-    
-    
-    
-
-      console.log("properties", properties);
+            }
+            const tagValueNumber = decoder.uint16();
+            const categoryNumber = decoder.uint16();
+            decoder.bytes(2);
+            return { tagValueNumber, categoryNumber };
+        });  
+    } catch (err) {
+        console.error('Error during decompression and/or parsing of resource:', err);
     }
-  });
 
-// const decoder = readStbl.default(buffer);
+    // Ensure the memory is released for garbage collection
+    compressedBuffer = null;
 
-// console.log("readStbl", readStbl);
+    return properties;
+}
 
-
-
-// // Convert the buffer to a string
-// const dataAsString = buffer.toString('hex');
-// console.log("dataAsString", dataAsString);
+function parseSimInfoResource(rawResource) {
+    // TODO
+    return {};
+}
 
 /**
  * Return an array of styledLookData to compile the cfg from
