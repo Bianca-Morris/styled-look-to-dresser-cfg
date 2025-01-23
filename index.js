@@ -15,6 +15,8 @@ import { readAgeGenderFlags, outfitCategoryTag, outfitCategoriesToStringMap } fr
 // Register the file buffer plugin
 registerPlugin(BufferFromFile.default);
 
+// TODO: get user-provided value via CLI flag or something
+// Currently just testing with what I've got on hand
 const TEST_RESOURCE_RELATIVE_PATH = "/styled_look_packages/SimplyAnjuta_BasegameLooksF_NoAppliedMakeUp.package";
 
 // Get the absolute path of the current file (similar to __filename)
@@ -33,7 +35,14 @@ function generateMCCCConfig(absolutePathToPackageFile) {
 
     // Generate an array of lines for the config file based on the data in the two files
     const linesForConfigFile = generateLinesForConfigFile(styledLookProperties, simInfoProperties);
-    console.log("linesForConfigFile", linesForConfigFile);
+
+    if (!linesForConfigFile.length) {
+        console.log("No lines to write to config file! Terminating early.");
+        return;
+    } else {
+        // TODO: write the config file to same folder as source file for now
+    }
+    // console.log("linesForConfigFile", linesForConfigFile);
 }
 
 function parsePackage(absolutePathToFile) {
@@ -44,7 +53,7 @@ function parsePackage(absolutePathToFile) {
 
     // Prepare a place to store the data
     let styledLookProperties = [];
-    let simInfoProperties = [];
+    let simInfoProperties = {};
 
     // For each resource key pair, handle file parsing separately
     resourceKeyPairs.forEach((resource) => {
@@ -55,9 +64,11 @@ function parsePackage(absolutePathToFile) {
         
         // Decide how to handle file based on data available
         if (RESOURCE_TYPE_DECIMAL === STYLED_LOOK_FILE_TYPE_DECIMAL) {
+            // Generating a simple array of file property objects here
             styledLookProperties.push(parseStyledLookResource(resource.value));
         } else if (RESOURCE_TYPE_DECIMAL === SIM_INFO_FILE_TYPE_DECIMAL) {
-            simInfoProperties.push(parseSimInfoResource(resource.value));
+            // We're keying by simInfo insance number to make it easier to find the specific outfits associated with a styledLook
+            simInfoProperties[RESOURCE_INSTANCE_DECIMAL.toString(16).toUpperCase()] = parseSimInfoResource(resource.value);
         } else {
             console.log("Skipping file with resource key: ", 
                 RESOURCE_TYPE_DECIMAL.toString(16) + "-" + RESOURCE_GROUP_DECIMAL.toString(16) + "-" + RESOURCE_INSTANCE_DECIMAL.toString(16))
@@ -133,8 +144,36 @@ function parseStyledLookResource(rawResource) {
 }
 
 function parseSimInfoResource(rawResource) {
-    // TODO
-    return {};
+    // As we decode the file, we'll add to an object of file properties
+    const properties = {};
+
+    let compressedBuffer = rawResource._bufferCache.buffer;
+
+    try {
+        // Magic # starts with "78 da", so it looks like these files are compressed
+        // using zlib; need to use zlib to decompress them
+        let decompressedBuffer = zlib.inflateSync(compressedBuffer);
+
+        const decoder = new BinaryDecoder(decompressedBuffer);
+
+        // Start decoding from top of the file
+        properties.version = decoder.uint32();
+
+        //----------------------------------------------------------------
+        // TODO: reverse engineer this gigantic monster file of doom
+        //----------------------------------------------------------------
+
+        // Ensure memory is released for garbage collection
+        decompressedBuffer = null;
+    } catch (err) {
+        console.error('Error during decompression and/or parsing of resource:', err);
+    }
+
+    // Again, ensure the memory is released for garbage collection
+    compressedBuffer = null;
+
+    // Return the JS object with properties from this file
+    return properties;
 }
 
 /**
@@ -150,9 +189,10 @@ function generateLinesForConfigFile(styledLookProperties, simInfoProperties) {
 
         // Find what simInfoProperties correspond with the current styledLookProperties
         const currSimInfo = simInfoProperties[styledLookPropertyFile.simInfoInstance];
-        // if (!currSimInfo) {
-        //     console.error("Couldn't find simInfo data for the current outfit; skipping styled look.")
-        // }
+        if (!currSimInfo) {
+            console.error("Couldn't find simInfo data for the current outfit; skipping styled look.")
+            return;
+        }
         // Need to generate the outfit parts from the sim info properties
         const outfitPartsString = generateOutfitPartsString(currSimInfo);
 
