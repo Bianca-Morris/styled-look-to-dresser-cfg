@@ -1,5 +1,6 @@
 import path, { dirname } from "path";
 import { fileURLToPath } from 'url';
+import { statSync } from "fs";
 import zlib from 'zlib';
 
 import { Stack } from '@datastructures-js/stack';
@@ -21,7 +22,8 @@ const TEST_RESOURCE_RELATIVE_PATH = "/styled_look_packages/SimplyAnjuta_Basegame
 
 // Get the absolute path of the current file (similar to __filename)
 const __filename = fileURLToPath(import.meta.url);
-const TEST_RESOURCE_ABSOLUTE_PATH = path.join(dirname(__filename), TEST_RESOURCE_RELATIVE_PATH);
+const __enclosingFolder = dirname(__filename);
+const TEST_RESOURCE_ABSOLUTE_PATH = path.join(__enclosingFolder, TEST_RESOURCE_RELATIVE_PATH);
 
 const STYLED_LOOK_FILE_TYPE_DECIMAL = 1908258978;
 const SIM_INFO_FILE_TYPE_DECIMAL = 39769844;
@@ -35,14 +37,15 @@ function generateMCCCConfig(absolutePathToPackageFile) {
 
     // Generate an array of lines for the config file based on the data in the two files
     const linesForConfigFile = generateLinesForConfigFile(styledLookProperties, simInfoProperties);
+    // console.log("linesForConfigFile", linesForConfigFile);
 
     if (!linesForConfigFile.length) {
         console.log("No lines to write to config file! Terminating early.");
         return;
     } else {
-        // TODO: write the config file to same folder as source file for now
+        createOrWriteToConfig(linesForConfigFile);
+        return;
     }
-    // console.log("linesForConfigFile", linesForConfigFile);
 }
 
 function parsePackage(absolutePathToFile) {
@@ -65,13 +68,13 @@ function parsePackage(absolutePathToFile) {
         // Decide how to handle file based on data available
         if (RESOURCE_TYPE_DECIMAL === STYLED_LOOK_FILE_TYPE_DECIMAL) {
             // Generating a simple array of file property objects here
-            styledLookProperties.push(parseStyledLookResource(resource.value));
+            styledLookProperties.push(parseStyledLookResource(resource.value, RESOURCE_INSTANCE_DECIMAL));
         } else if (RESOURCE_TYPE_DECIMAL === SIM_INFO_FILE_TYPE_DECIMAL) {
             // We're keying by simInfo insance number to make it easier to find the specific outfits associated with a styledLook
             simInfoProperties[RESOURCE_INSTANCE_DECIMAL.toString(16).toUpperCase()] = parseSimInfoResource(resource.value);
         } else {
-            console.log("Skipping file with resource key: ", 
-                RESOURCE_TYPE_DECIMAL.toString(16) + "-" + RESOURCE_GROUP_DECIMAL.toString(16) + "-" + RESOURCE_INSTANCE_DECIMAL.toString(16))
+            // console.log("Skipping file with resource key: ", 
+            //     RESOURCE_TYPE_DECIMAL.toString(16) + "-" + RESOURCE_GROUP_DECIMAL.toString(16) + "-" + RESOURCE_INSTANCE_DECIMAL.toString(16))
         }
     });
 
@@ -79,7 +82,7 @@ function parsePackage(absolutePathToFile) {
     return { styledLookProperties, simInfoProperties };
 }
 
-function parseStyledLookResource(rawResource) {
+function parseStyledLookResource(rawResource, resourceInstanceNumber) {
     // As we decode the file, we'll add to an object of file properties
     const properties = {};
 
@@ -132,6 +135,10 @@ function parseStyledLookResource(rawResource) {
 
         // Ensure memory is released for garbage collection
         decompressedBuffer = null;
+
+        if (properties.simInfoInstance === '7748A55850C54361') {
+            console.log(properties, resourceInstanceNumber);
+        }
     } catch (err) {
         console.error('Error during decompression and/or parsing of resource:', err);
     }
@@ -184,7 +191,6 @@ function generateLinesForConfigFile(styledLookProperties, simInfoProperties) {
     // Each line will be a string representing an outfit for a particular age and gender
     const lines = [];
 
-    // O marks that this is the beginning of an outfit config line
     styledLookProperties.forEach(styledLookPropertyFile => {
 
         // Find what simInfoProperties correspond with the current styledLookProperties
@@ -220,8 +226,8 @@ function generateLinesForConfigFile(styledLookProperties, simInfoProperties) {
                 // Iterate through all compatible outfit categories for the current age and gender
                 while (outfitCategoriesStack.size() > 0) {
                     const currentOutfitCategory = outfitCategoriesStack.pop(); // Get the last outfit category from the stack
-                    // Create the combination string
-                    const configLine = `0.${currentGender}.${currentAge},${currentOutfitCategory},${outfitPartsString}`;
+                    // Create the combination string; O marks that this is the beginning of an outfit config line
+                    const configLine = `O.${currentGender}.${currentAge},${currentOutfitCategory},${outfitPartsString}`;
 
                     // Add the generated line to the configLines array
                     lines.push(configLine);
@@ -290,4 +296,19 @@ function populateAgeGenderOutfitCategoryArrays(styledLookProperties) {
 
 function generateOutfitPartsString(simInfoProperties) {
     return "TODO";
+}
+
+function createOrWriteToConfig(lines) {
+    // TODO: For now, assuming this is in the same folder as source... in future will want to 
+    // update to use the Sims 4/Mods folder for the current user
+    const configFileAbsolutePath = path.join(__enclosingFolder, "mc_dresser.cfg");
+
+    // Check for existence of mc_dresser.cfg
+    const fsStats = statSync(configFileAbsolutePath, { throwIfNoEntry: false });
+    if (!fsStats) { // this is undefined when file is not found
+        // create the file and write to it
+        
+    } else {
+        // open the file and append to it
+    }
 }
