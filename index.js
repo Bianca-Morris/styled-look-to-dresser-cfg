@@ -163,161 +163,176 @@ function parseSimInfoResource(rawResource) {
 
         const decoder = new BinaryDecoder(decompressedBuffer);
 
-        // Start decoding from top of the file
+        // Primary Data Block
         properties.version = decoder.uint32();
-        properties.linkListOffset = decoder.uint32();
+        const file_version = properties.version;
+        properties.offset_LinkList = decoder.uint32();
         
         const dataStart = decoder.tell();
-        
-        decoder.seek(dataStart + properties.linkListOffset);
-        
-        const linksNum = decoder.byte();
-        properties.linkList = makeList(linksNum, () => {
-            return {
-                instance: decoder.uint64().toString(16).toUpperCase(),
-                group: decoder.uint32().toString(16).toUpperCase(),
-                type: decoder.uint32().toString(16).toUpperCase()
-            }
-        });
-        
-        decoder.seek(dataStart);
-        
-        properties.physique = makeList(8, () => decoder.float());
+
+        // Physique
+        properties.physique = {
+            heavy: decoder.float(),
+            fit: decoder.float(),
+            lean: decoder.float(),
+            bony: decoder.float(),
+            hips_wide: decoder.float(),
+            hips_narrow: decoder.float(),
+            waist_wide: decoder.float(),
+            waist_narrow: decoder.float()
+        };
+
+        // Identity
         properties.age = decoder.uint32();
         properties.gender = decoder.uint32();
-
-        if (properties.version > 18) {
+        
+        if (file_version > 18) {
             properties.species = decoder.uint32();
             properties.unknown1 = decoder.uint32();
         }
 
-        if (properties.version >= 32) {
+        if (file_version >= 32) {
             const numPronouns = decoder.int32();
-            // Skipping pronoun parsing for now
-            // properties.pronouns = makeList(numPronouns, () => {
-            //     const grammaticalCase = decoder.uint32();
-            //     if (grammaticalCase > 0) {
-            //         return {
-            //             grammaticalCase,
-            //             pronoun: decoder.string()
-            //         }
-            //     }
-            // });
+            // Skipping pronoun parsing TODO: maybe is needed for some files? IDK
+            // properties.pronouns = makeList(numPronouns, () => { ... });
         }
 
+        // Appearance
         properties.skintoneRef = decoder.uint64().toString(16).toUpperCase();
-        if (properties.version >= 28) {
+        if (file_version >= 28) {
             properties.skintoneShift = decoder.float();
         }
-        if (properties.version > 19) {
+
+        if (file_version > 19) {
             const numPeltLayers = decoder.byte();
             properties.peltLayers = makeList(numPeltLayers, () => {
                 return {
                     peltLayerRef: decoder.uint64().toString(16).toUpperCase(),
                     color: decoder.uint32().toString(16).toUpperCase()
-                }
+                };
             });
         }
 
         const numSculpts = decoder.byte();
-        properties.sculpts = makeList(numSculpts, () => decoder.byte());
+        properties.sculpts_indices = makeList(numSculpts, () => decoder.byte());
 
         const numFaceModifiers = decoder.byte();
         properties.faceModifiers = makeList(numFaceModifiers, () => {
             return {
-                keyIndex: decoder.byte(),
+                modifierKeyIndex: decoder.byte(),
                 weight: decoder.float()
-            }
+            };
         });
 
         const numBodyModifiers = decoder.byte();
         properties.bodyModifiers = makeList(numBodyModifiers, () => {
             return {
-                keyIndex: decoder.byte(),
+                modifierKeyIndex: decoder.byte(),
                 weight: decoder.float()
-            }
+            };
         });
-
+        
+        // Voice
         properties.voiceActor = decoder.uint32();
         properties.voicePitch = decoder.float();
         properties.voiceEffect = decoder.uint64().toString(16).toUpperCase();
+        
         properties.unknown2 = decoder.uint32();
         properties.unknown3 = decoder.uint32();
-
-        const numOutfits = decoder.uint32();
-        properties.simOutfits = makeList(numOutfits, () => {
+        
+        // Outfit Info
+        const numSimOutfits = decoder.uint32();
+        properties.simOutfits = makeList(numSimOutfits, () => {
             const category = decoder.byte();
             const unknown = decoder.uint32();
-            const count = decoder.uint32();
-            const outfits = makeList(count, () => {
+            const outfitDescCount = decoder.uint32();
+            const outfits = makeList(outfitDescCount, () => {
                 const outfitID = decoder.uint64().toString(16).toUpperCase();
                 const outfitFlags = decoder.uint64().toString(16).toUpperCase();
                 const created = decoder.uint64().toString(16).toUpperCase();
                 const matchHair = decoder.byte();
-                const partCount = decoder.uint32();
-                const partEntries = makeList(partCount, () => {
+                const partEntryCount = decoder.uint32();
+                const partEntries = makeList(partEntryCount, () => {
                     return {
-                        keyIndex: decoder.byte(),
+                        partKeyIndex: decoder.byte(),
                         bodyType: decoder.uint32(),
                         colorshift: decoder.uint64().toString(16).toUpperCase()
-                    }
+                    };
                 });
                 return { outfitID, outfitFlags, created, matchHair, partEntries };
             });
             return { category, unknown, outfits };
         });
-
+        
+        // Genetics Info
         const numSculptsGenetic = decoder.byte();
-        properties.sculptsGenetic = makeList(numSculptsGenetic, () => decoder.byte());
+        properties.sculptsGenetic_indices = makeList(numSculptsGenetic, () => decoder.byte());
 
         const numFaceModifiersGenetic = decoder.byte();
         properties.faceModifiersGenetic = makeList(numFaceModifiersGenetic, () => {
             return {
-                keyIndex: decoder.byte(),
+                modifierKeyIndex: decoder.byte(),
                 weight: decoder.float()
-            }
+            };
         });
 
         const numBodyModifiersGenetic = decoder.byte();
         properties.bodyModifiersGenetic = makeList(numBodyModifiersGenetic, () => {
             return {
-                keyIndex: decoder.byte(),
+                modifierKeyIndex: decoder.byte(),
                 weight: decoder.float()
-            }
+            };
         });
-
-        properties.genetic_physique = makeList(4, () => decoder.float());
+        
+        properties.genetic_physique = {
+            heavy: decoder.float(),
+            fit: decoder.float(),
+            lean: decoder.float(),
+            bony: decoder.float()
+        };
 
         const numCASPartsGenetic = decoder.byte();
         properties.CASPartsGenetic = makeList(numCASPartsGenetic, () => {
             return {
-                keyIndex: decoder.byte(),
+                partKeyIndex: decoder.byte(),
                 bodyType: decoder.uint32()
-            }
+            };
         });
-
-        if (properties.version >= 32) {
+        
+        if (file_version >= 32) {
             const numGrowthPartsGenetic = decoder.byte();
             properties.GrowthPartsGenetic = makeList(numGrowthPartsGenetic, () => {
                 return {
-                    keyIndex: decoder.byte(),
+                    partKeyIndex: decoder.byte(),
                     bodyType: decoder.uint32()
-                }
+                };
             });
         }
-
+        
         properties.voiceActorGenetic = decoder.uint32();
         properties.voicePitchGenetic = decoder.float();
+        
+        // Traits & Aspiration
         properties.flags = decoder.byte();
         properties.aspirationRef = decoder.uint64().toString(16).toUpperCase();
-
-        if (properties.version >= 32) {
+        
+        if (file_version >= 32) {
             properties.unknown4 = decoder.bytes(3);
         }
-
+        
         const numTraits = decoder.byte();
         properties.traitRefs = makeList(numTraits, () => decoder.uint64().toString(16).toUpperCase());
-
+        
+        // TGI Resource Key Link List
+        decoder.seek(dataStart + properties.offset_LinkList);
+        const linkListCount = decoder.byte();
+        properties.LinkList = makeList(linkListCount, () => {
+            return {
+                Instance: decoder.uint64().toString(16).toUpperCase(),
+                Group: decoder.uint32().toString(16).toUpperCase(),
+                Type: decoder.uint32().toString(16).toUpperCase()
+            };
+        });
 
         // Ensure memory is released for garbage collection
         decompressedBuffer = null;
@@ -395,6 +410,7 @@ function generateLinesForConfigFile(styledLookProperties, simInfoProperties) {
         }
     });
 
+    console.log("lines", lines);
     return lines;
 }
 
@@ -476,11 +492,23 @@ function generateOutfitPartsString(simInfoProperties, outfitCategories) {
     // Process part entries into string
     if (!outfitOfInterest) return;
     console.log("outfitOfInterest", outfitOfInterest);
-    return processPartEntries(outfitOfInterest.partEntries);
+    return processPartEntries(outfitOfInterest.partEntries, simInfoProperties.LinkList);
 }
 
-function processPartEntries(partEntriesArr) {
-    partEntriesArr.forEach(partEntry => console.log(partEntry));
+function processPartEntries(partEntriesArr, linkList) {
+    let entryString = "";
+    // Grab all the cas parts and populate the string with them
+    partEntriesArr.forEach((partEntry, i) => 
+        {
+            const tgi = linkList[partEntry.partKeyIndex];
+            const instance = tgi.Instance.padStart(16, "0");
+            entryString += partEntry.bodyType + ":0x"+ instance;
+            if (i !== partEntriesArr.length - 1) {
+                entryString += ".";
+            }
+    });
+    // console.log("entryString", entryString);
+    return entryString;
 }
 
 function createOrWriteToConfig(lines) {
