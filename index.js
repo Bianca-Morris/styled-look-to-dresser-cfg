@@ -165,10 +165,159 @@ function parseSimInfoResource(rawResource) {
 
         // Start decoding from top of the file
         properties.version = decoder.uint32();
+        properties.linkListOffset = decoder.uint32();
+        
+        const dataStart = decoder.tell();
+        
+        decoder.seek(dataStart + properties.linkListOffset);
+        
+        const linksNum = decoder.byte();
+        properties.linkList = makeList(linksNum, () => {
+            return {
+                instance: decoder.uint64().toString(16).toUpperCase(),
+                group: decoder.uint32().toString(16).toUpperCase(),
+                type: decoder.uint32().toString(16).toUpperCase()
+            }
+        });
+        
+        decoder.seek(dataStart);
+        
+        properties.physique = makeList(8, () => decoder.float());
+        properties.age = decoder.uint32();
+        properties.gender = decoder.uint32();
 
-        //----------------------------------------------------------------
-        // TODO: reverse engineer this gigantic monster file of doom
-        //----------------------------------------------------------------
+        if (properties.version > 18) {
+            properties.species = decoder.uint32();
+            properties.unknown1 = decoder.uint32();
+        }
+
+        if (properties.version >= 32) {
+            const numPronouns = decoder.int32();
+            // Skipping pronoun parsing for now
+            // properties.pronouns = makeList(numPronouns, () => {
+            //     const grammaticalCase = decoder.uint32();
+            //     if (grammaticalCase > 0) {
+            //         return {
+            //             grammaticalCase,
+            //             pronoun: decoder.string()
+            //         }
+            //     }
+            // });
+        }
+
+        properties.skintoneRef = decoder.uint64().toString(16).toUpperCase();
+        if (properties.version >= 28) {
+            properties.skintoneShift = decoder.float();
+        }
+        if (properties.version > 19) {
+            const numPeltLayers = decoder.byte();
+            properties.peltLayers = makeList(numPeltLayers, () => {
+                return {
+                    peltLayerRef: decoder.uint64().toString(16).toUpperCase(),
+                    color: decoder.uint32().toString(16).toUpperCase()
+                }
+            });
+        }
+
+        const numSculpts = decoder.byte();
+        properties.sculpts = makeList(numSculpts, () => decoder.byte());
+
+        const numFaceModifiers = decoder.byte();
+        properties.faceModifiers = makeList(numFaceModifiers, () => {
+            return {
+                keyIndex: decoder.byte(),
+                weight: decoder.float()
+            }
+        });
+
+        const numBodyModifiers = decoder.byte();
+        properties.bodyModifiers = makeList(numBodyModifiers, () => {
+            return {
+                keyIndex: decoder.byte(),
+                weight: decoder.float()
+            }
+        });
+
+        properties.voiceActor = decoder.uint32();
+        properties.voicePitch = decoder.float();
+        properties.voiceEffect = decoder.uint64().toString(16).toUpperCase();
+        properties.unknown2 = decoder.uint32();
+        properties.unknown3 = decoder.uint32();
+
+        const numOutfits = decoder.uint32();
+        properties.simOutfits = makeList(numOutfits, () => {
+            const category = decoder.byte();
+            const unknown = decoder.uint32();
+            const count = decoder.uint32();
+            const outfits = makeList(count, () => {
+                const outfitID = decoder.uint64().toString(16).toUpperCase();
+                const outfitFlags = decoder.uint64().toString(16).toUpperCase();
+                const created = decoder.uint64().toString(16).toUpperCase();
+                const matchHair = decoder.byte();
+                const partCount = decoder.uint32();
+                const partEntries = makeList(partCount, () => {
+                    return {
+                        keyIndex: decoder.byte(),
+                        bodyType: decoder.uint32(),
+                        colorshift: decoder.uint64().toString(16).toUpperCase()
+                    }
+                });
+                return { outfitID, outfitFlags, created, matchHair, partEntries };
+            });
+            return { category, unknown, outfits };
+        });
+
+        const numSculptsGenetic = decoder.byte();
+        properties.sculptsGenetic = makeList(numSculptsGenetic, () => decoder.byte());
+
+        const numFaceModifiersGenetic = decoder.byte();
+        properties.faceModifiersGenetic = makeList(numFaceModifiersGenetic, () => {
+            return {
+                keyIndex: decoder.byte(),
+                weight: decoder.float()
+            }
+        });
+
+        const numBodyModifiersGenetic = decoder.byte();
+        properties.bodyModifiersGenetic = makeList(numBodyModifiersGenetic, () => {
+            return {
+                keyIndex: decoder.byte(),
+                weight: decoder.float()
+            }
+        });
+
+        properties.genetic_physique = makeList(4, () => decoder.float());
+
+        const numCASPartsGenetic = decoder.byte();
+        properties.CASPartsGenetic = makeList(numCASPartsGenetic, () => {
+            return {
+                keyIndex: decoder.byte(),
+                bodyType: decoder.uint32()
+            }
+        });
+
+        if (properties.version >= 32) {
+            const numGrowthPartsGenetic = decoder.byte();
+            properties.GrowthPartsGenetic = makeList(numGrowthPartsGenetic, () => {
+                return {
+                    keyIndex: decoder.byte(),
+                    bodyType: decoder.uint32()
+                }
+            });
+        }
+
+        properties.voiceActorGenetic = decoder.uint32();
+        properties.voicePitchGenetic = decoder.float();
+        properties.flags = decoder.byte();
+        properties.aspirationRef = decoder.uint64().toString(16).toUpperCase();
+
+        if (properties.version >= 32) {
+            properties.unknown4 = decoder.bytes(3);
+        }
+
+        const numTraits = decoder.byte();
+        properties.traitRefs = makeList(numTraits, () => decoder.uint64().toString(16).toUpperCase());
+
 
         // Ensure memory is released for garbage collection
         decompressedBuffer = null;
@@ -199,8 +348,6 @@ function generateLinesForConfigFile(styledLookProperties, simInfoProperties) {
             console.error("Couldn't find simInfo data for the current outfit; skipping styled look.")
             return;
         }
-        // Need to generate the outfit parts from the sim info properties
-        const outfitPartsString = generateOutfitPartsString(currSimInfo);
 
         // Now need to generate the arrays we'll get the stacks from
         const {
@@ -208,6 +355,11 @@ function generateLinesForConfigFile(styledLookProperties, simInfoProperties) {
             1: ages = [],
             2: outfitCategories = []
         } = populateAgeGenderOutfitCategoryArrays(styledLookPropertyFile);
+
+
+        // Need to generate the outfit parts from the sim info properties
+        const outfitPartsString = generateOutfitPartsString(currSimInfo, outfitCategories);
+
         
         const gendersStack = Stack.fromArray(genders);
         // Cloning the age & categories array because it may need to be regenerated
@@ -294,8 +446,41 @@ function populateAgeGenderOutfitCategoryArrays(styledLookProperties) {
 }
 
 
-function generateOutfitPartsString(simInfoProperties) {
-    return "TODO";
+function generateOutfitPartsString(simInfoProperties, outfitCategories) {
+    if (outfitCategories.length === 0) {
+        console.error("No outfit categories available for this styled look!");
+        return;
+    }
+    console.log("==============================================================================");
+    const keyMap = {
+        0: "E",
+        1: "F",
+        2: "At",
+        3: "Sl",
+        4: "P",
+        9: "Sw",
+        10: "Hw",
+        11: "Cw"
+    };
+    const simOutfits = simInfoProperties?.simOutfits;
+
+    // Identify the outfit of interest
+    let outfitOfInterest;
+    simOutfits.forEach(simOutfit => {
+        // TODO: Taking the first one from each list; maybe a too big assumption. We'll see.
+        if (keyMap[simOutfit.category] === outfitCategories[0]) {
+            outfitOfInterest = simOutfit.outfits[0];
+        }
+    });
+
+    // Process part entries into string
+    if (!outfitOfInterest) return;
+    console.log("outfitOfInterest", outfitOfInterest);
+    return processPartEntries(outfitOfInterest.partEntries);
+}
+
+function processPartEntries(partEntriesArr) {
+    partEntriesArr.forEach(partEntry => console.log(partEntry));
 }
 
 function createOrWriteToConfig(lines) {
