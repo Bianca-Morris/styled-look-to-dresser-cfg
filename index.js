@@ -1,6 +1,6 @@
 import path, { dirname } from "path";
 import { fileURLToPath } from 'url';
-import { statSync } from "fs";
+import { statSync, writeFileSync, appendFileSync } from "fs";
 import zlib from 'zlib';
 
 import { Stack } from '@datastructures-js/stack';
@@ -516,12 +516,21 @@ function createOrWriteToConfig(lines) {
     // update to use the Sims 4/Mods folder for the current user
     const configFileAbsolutePath = path.join(__enclosingFolder, "mc_dresser.cfg");
 
+    const linesStr = lines.join('\n');
+
     // Check for existence of mc_dresser.cfg
-    const fsStats = statSync(configFileAbsolutePath, { throwIfNoEntry: false });
-    if (!fsStats) { // this is undefined when file is not found
-        // create the file and write to it
-        
-    } else {
-        // open the file and append to it
+    try {
+        const fsStats = statSync(configFileAbsolutePath, { throwIfNoEntry: false });
+        if (!fsStats) { // this is undefined when file is not found
+            // create the file and write to it
+            writeFileSync(configFileAbsolutePath, linesStr, { encoding: 'utf8' });
+            console.log("Successfully wrote file!");
+        } else {
+            // open the file and append to it
+            appendFileSync(configFileAbsolutePath, '\n' + linesStr, { encoding: 'utf8' });
+            console.log("Successfully appended to file!");
+        }
+    } catch (error) {
+        console.error("Error writing to config: " + error.message);
     }
 }
