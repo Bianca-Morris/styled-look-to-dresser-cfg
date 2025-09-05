@@ -18,7 +18,7 @@ registerPlugin(BufferFromFile.default);
 
 // TODO: get user-provided value via CLI flag or something
 // Currently just testing with what I've got on hand
-const TEST_RESOURCE_RELATIVE_PATH = "/styled_look_packages/SimplyAnjuta_BasegameLooksF_NoAppliedMakeUp.package";
+const TEST_RESOURCE_RELATIVE_PATH = "/styled_look_packages/SimplyAnjuta_BasegameLooks_Toddlers.package";
 
 // Get the absolute path of the current file (similar to __filename)
 const __filename = fileURLToPath(import.meta.url);
@@ -484,7 +484,7 @@ function generateOutfitPartsString(simInfoProperties, outfitCategories) {
     let outfitOfInterest;
     simOutfits.forEach(simOutfit => {
         // TODO: Taking the first one from each list; maybe a too big assumption. We'll see.
-        if (keyMap[simOutfit.category] === outfitCategories[0]) {
+        if (keyMap[simOutfit.category] ===  "E") { //outfitCategories[0]) {
             outfitOfInterest = simOutfit.outfits[0];
         }
     });
